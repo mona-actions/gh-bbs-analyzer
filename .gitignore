@@ -1,0 +1,5 @@
+/gh-bbs-analyzer
+/gh-bbs-analyzer.exe
+/*.log
+.DS_Store
+thumbs.DB
