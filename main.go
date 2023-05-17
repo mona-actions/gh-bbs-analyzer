@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -39,6 +40,24 @@ var (
 		RunE:          Process,
 	}
 )
+
+// custom structs for JSON conversion
+type BitBucketProjectResponse struct {
+	Size          int                `json:"size"`
+	Limit         int                `json:"limit"`
+	IsLastPage    bool               `json:"isLastPage"`
+	Values        []BitBucketProject `json:"values"`
+	Start         int                `json:"start"`
+	Filter        string             `json:"filter"`
+	NextPageStart int                `json:"nextPageStart"`
+}
+type BitBucketProject struct {
+	Key    string `json:"key"`
+	ID     int    `json:"id"`
+	Name   string `json:"name"`
+	Public bool   `json:"public"`
+	Type   string `json:"type"`
+}
 
 func init() {
 
@@ -196,6 +215,9 @@ func Process(cmd *cobra.Command, args []string) (err error) {
 	}
 	defer logFile.Close()
 
+	LF()
+	Debug("---- VALIDATING FLAGS & ENV VARS ----")
+
 	// validate flags
 	r, _ := regexp.Compile("^http(s|):(//|)")
 	if !r.MatchString(bbs_server_url) {
@@ -216,20 +238,62 @@ func Process(cmd *cobra.Command, args []string) (err error) {
 	OutputFlags("BitBucket Username", bbs_username)
 	OutputFlags("BitBucket Password", "**********")
 	OutputFlags("SSL Verification Disabled", strconv.FormatBool(no_ssl_verify))
+	LF()
 
-	// do logic here
-	data, err := BBSRequest("projects")
+	// Start the spinner in the CLI
+	sp.Start()
+
+	// Get all projects
+	projects, err := GetProjects([]BitBucketProject{}, 0)
 	if err != nil {
-		OutputError(fmt.Sprintf("Error making request: %s", err), true)
+		OutputError(fmt.Sprintf("Error looking up projects: %s", err), true)
 	}
 
-	OutputNotice("client: got response!")
-	OutputNotice(fmt.Sprintf("client: response: %s\n", data))
+	// Stop the spinner in the CLI
+	sp.Stop()
+
+	OutputNotice(fmt.Sprintf("Projects found: %d", len(projects)))
 
 	// always return
 	return err
 }
 
+// pagination method for projects
+func GetProjects(projects []BitBucketProject, start int) ([]BitBucketProject, error) {
+
+	// get all projects
+	DebugAndStatus(fmt.Sprintf("Making HTTP request to /projects starting at %d", start))
+	data, err := BBSRequest(fmt.Sprintf("projects?limit=1&start=%d", start))
+	if err != nil {
+		return projects, err
+	}
+
+	// convert response
+	var response BitBucketProjectResponse
+	Debug(fmt.Sprintf("Attempting to unmarshal response %s", data))
+	err = json.Unmarshal([]byte(data), &response)
+	if err != nil {
+		return projects, err
+	}
+
+	// if first iteration executing, set
+	// otherwise merge values
+	if len(projects) == 0 {
+		projects = response.Values
+	} else {
+		projects = append(response.Values, projects...)
+	}
+
+	// check for next page recursively
+	if !response.IsLastPage {
+		Debug("Not the last page. Recursively looking up next page.")
+		projects, err = GetProjects(projects, response.NextPageStart)
+	}
+
+	return projects, err
+}
+
+// reusable bitbucket server request method
 func BBSRequest(endpoint string) (data string, err error) {
 
 	// set up endpoint
@@ -238,7 +302,7 @@ func BBSRequest(endpoint string) (data string, err error) {
 
 	// set SSL verification using inverse bool from flag
 	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: !no_ssl_verify},
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: no_ssl_verify},
 	}
 
 	// create client
