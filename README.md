@@ -34,6 +34,11 @@ Usage:
   gh bbs-analyzer [flags]
 
 Flags:
-  -h, --help      help for gh
-  -v, --version   version for gh
+  -p, --bbs-password string     The Bitbucket password of the user specified by --bbs-username. If not set will be read from BBS_PASSWORD environment variable.
+  -s, --bbs-server-url string   The full URL of the Bitbucket Server/Data Center to migrate from. E.g. http://bitbucket.contoso.com:7990
+  -u, --bbs-username string     The Bitbucket username of a user with site admin privileges. If not set will be read from BBS_USERNAME environment variable.
+  -h, --help                    help for gh
+      --no-ssl-verify           Disables SSL verification when communicating with your Bitbucket Server/Data Center instance. All other migration steps will continue to verify SSL. If your Bitbucket instance has a self-signed SSL certificate then setting this flag will allow the migration archive to be exported.
+  -o, --output-file string      The file to output the results to. (default "results.csv")
+  -v, --version                 version for gh
 ```
