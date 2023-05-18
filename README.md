@@ -5,10 +5,31 @@ GitHub CLI extension for analyzing BitBucket Server to get migration statistics.
 [![release](https://github.com/mona-actions/gh-migrate-webhook-secrets/actions/workflows/release.yaml/badge.svg)](https://github.com/mona-actions/gh-migrate-webhook-secrets/actions/workflows/release.yaml)
 
 ## Under Construction
-This is a work-in-progress
+This is a work-in-progress. Currently the tool will report:
+
+- Repository disk sizes
+- Pull request counts
+- Comment counts
+- If repository is archived
+- If repository is public
+
+Tested on BitBucket Server 8.6.1
+
+Future plans include:
+- Attachment counts
+- Multithreading
 
 ## Prerequisites
 - [GitHub CLI](https://cli.github.com/manual/installation) installed.
+
+## Permissions Required
+In order for the analysis to work correctly, you will need to utilize a systems admin account so that all project and repository endpoints respond appropriately. If you don't, you will only receive limited information (the projects & repositories the user has access to).
+
+The endpoints currently called are:
+- `<server>/<api-url>/projects`
+- `<server>/<api-url>/projects/<project-key>/repos`
+- `<server>/projects/<project-key>/repos/<repo-slug>/sizes` (non-API endpoint hack)
+- `<server>/<api-url>/projects/<project-key>/repos/<repo-slug>/pull_requests`
 
 ## Install
 

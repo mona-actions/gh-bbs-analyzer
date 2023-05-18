@@ -383,7 +383,7 @@ func Process(cmd *cobra.Command, args []string) (err error) {
 
 	// write header
 	_, err = out_file.WriteString(
-		fmt.Sprintln("project,repository,size,pull_requests,comments"),
+		fmt.Sprintln("project,repository,size,pull_requests,comments,archived,public"),
 	)
 	if err != nil {
 		OutputError("Error writing to output file.", true)
@@ -393,12 +393,14 @@ func Process(cmd *cobra.Command, args []string) (err error) {
 		_, err = out_file.WriteString(
 			fmt.Sprintln(
 				fmt.Sprintf(
-					"%s,%s,%d,%d,%d",
+					"%s,%s,%d,%d,%d,%s,%s",
 					repository.Project.Key,
 					repository.Slug,
 					repository.Size.Repository,
 					len(repository.PullRequests),
 					repository.CommentCount,
+					strconv.FormatBool(repository.Archived),
+					strconv.FormatBool(repository.Public),
 				),
 			),
 		)
@@ -558,7 +560,7 @@ func BBSHTTPRequest(path string, endpoint string, method string) (data string, e
 	url := fmt.Sprintf("%s%s%s", bbs_server_url, path, endpoint)
 	Debug(fmt.Sprintf("Request URL: %s", url))
 
-	// set SSL verification using inverse bool from flag
+	// set SSL verification
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: no_ssl_verify},
 	}
