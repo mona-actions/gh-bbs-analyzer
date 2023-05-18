@@ -10,6 +10,8 @@ This is a work-in-progress. Currently the tool will report:
 - Repository disk sizes
 - Pull request counts
 - Comment counts
+- If repository is archived
+- If repository is public
 
 Tested on BitBucket Server 8.6.1
 
