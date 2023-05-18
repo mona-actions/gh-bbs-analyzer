@@ -62,6 +62,22 @@ type BitBucketRepositoryResponse struct {
 	Filter        string                `json:"filter"`
 	NextPageStart int                   `json:"nextPageStart"`
 }
+type BitBucketPullRequestResponse struct {
+	Size          int                    `json:"size"`
+	Limit         int                    `json:"limit"`
+	IsLastPage    bool                   `json:"isLastPage"`
+	Values        []BitBucketPullRequest `json:"values"`
+	Start         int                    `json:"start"`
+	Filter        string                 `json:"filter"`
+	NextPageStart int                    `json:"nextPageStart"`
+}
+type BitBucketPullRequest struct {
+	ID         int                            `json:"id"`
+	Properties BitBucketPullRequestProperties `json:"properties"`
+}
+type BitBucketPullRequestProperties struct {
+	CommentCount int `json:"commentCount"`
+}
 type BitBucketProject struct {
 	Key    string `json:"key"`
 	ID     int    `json:"id"`
@@ -82,6 +98,8 @@ type BitBucketRepository struct {
 	Archived      bool             `json:"archived"`
 	Project       BitBucketProject `json:"project"`
 	Size          BitBucketRepositorySize
+	PullRequests  []BitBucketPullRequest
+	CommentCount  int
 }
 type BitBucketRepositorySize struct {
 	Repository  int `json:"repository"`
@@ -281,7 +299,7 @@ func Process(cmd *cobra.Command, args []string) (err error) {
 	OutputFlags("BitBucket Username", bbs_username)
 	OutputFlags("BitBucket Password", "**********")
 	OutputFlags("SSL Verification Disabled", strconv.FormatBool(no_ssl_verify))
-	LF()
+	Debug("---- PROCESSING API REQUESTS ----")
 
 	// Start the spinner in the CLI
 	sp.Start()
@@ -301,34 +319,60 @@ func Process(cmd *cobra.Command, args []string) (err error) {
 		}
 	}
 
-	// get repo sizes
+	// get repo info
 	total_size := 0
+	total_pr := 0
+	total_comments := 0
 	for i, repository := range repositories {
+
+		// get repo size
 		size, err := GetRepositorySize(repository)
 		if err != nil {
 			OutputError(fmt.Sprintf("Error looking up repository size: %s", err), true)
 		}
-		// set the size object on the repo
 		repositories[i].Size = size
 		total_size += size.Repository
+
+		// get pull requests
+		var pull_requests []BitBucketPullRequest
+		pull_requests, err = GetPullRequests(repository, pull_requests, 0)
+		if err != nil {
+			OutputError(fmt.Sprintf("Error looking up repository pull requests: %s", err), true)
+		}
+		// get all pull request comments
+		repository_comment_count := 0
+		for _, pull_request := range pull_requests {
+			repository_comment_count += pull_request.Properties.CommentCount
+		}
+		repositories[i].CommentCount = repository_comment_count
+		total_comments += repository_comment_count
+		repositories[i].PullRequests = pull_requests
+		total_pr += len(pull_requests)
 	}
 
 	// do some quick math
 	display_size := fmt.Sprintf("%d B", total_size)
-	if total_size >= 1000000000 {
-		display_size = fmt.Sprintf("%d GB", total_size/1000000000)
-	} else if total_size >= 1000000 {
-		display_size = fmt.Sprintf("%d MB", total_size/1000000)
-	} else if total_size >= 1000 {
-		display_size = fmt.Sprintf("%d KB", total_size/1000)
+	b := 1024
+	mb := b * b
+	gb := mb * b
+	if total_size >= gb {
+		display_size = fmt.Sprintf("%d GB", total_size/gb)
+	} else if total_size >= mb {
+		display_size = fmt.Sprintf("%d MB", total_size/mb)
+	} else if total_size >= b {
+		display_size = fmt.Sprintf("%d KB", total_size/b)
 	}
 
 	// Stop the spinner in the CLI
 	sp.Stop()
 
-	OutputNotice(fmt.Sprintf("Projects found: %d", len(projects)))
-	OutputNotice(fmt.Sprintf("Repositories found: %d", len(repositories)))
-	OutputNotice(fmt.Sprintf("Total Size: %s", display_size))
+	LF()
+	OutputNotice(fmt.Sprintf("Projects: %d", len(projects)))
+	OutputNotice(fmt.Sprintf("Repositories: %d", len(repositories)))
+	OutputNotice(fmt.Sprintf("Pull Requests: %d", total_pr))
+	OutputNotice(fmt.Sprintf("Comments: %d", total_comments))
+	OutputNotice(fmt.Sprintf("Total Disk Size: %s", display_size))
+	LF()
 
 	// Create output file
 	out_file, err := os.Create(output_file)
@@ -339,7 +383,7 @@ func Process(cmd *cobra.Command, args []string) (err error) {
 
 	// write header
 	_, err = out_file.WriteString(
-		fmt.Sprintln("project,repository,size"),
+		fmt.Sprintln("project,repository,size,pull_requests,comments"),
 	)
 	if err != nil {
 		OutputError("Error writing to output file.", true)
@@ -347,7 +391,16 @@ func Process(cmd *cobra.Command, args []string) (err error) {
 	// write body
 	for _, repository := range repositories {
 		_, err = out_file.WriteString(
-			fmt.Sprintln(fmt.Sprintf("%s,%s,%d", repository.Project.Key, repository.Slug, repository.Size.Repository)),
+			fmt.Sprintln(
+				fmt.Sprintf(
+					"%s,%s,%d,%d,%d",
+					repository.Project.Key,
+					repository.Slug,
+					repository.Size.Repository,
+					len(repository.PullRequests),
+					repository.CommentCount,
+				),
+			),
 		)
 		if err != nil {
 			OutputError("Error writing to output file.", true)
@@ -413,6 +466,46 @@ func GetRepositorySize(repository BitBucketRepository) (size BitBucketRepository
 	}
 
 	return size, err
+}
+
+func GetPullRequests(repository BitBucketRepository, pull_requests []BitBucketPullRequest, start int) ([]BitBucketPullRequest, error) {
+	// get all projects
+	endpoint := fmt.Sprintf(
+		"/projects/%s/repos/%s/pull-requests?state=all&limit=%d&start=%d",
+		repository.Project.Key,
+		repository.Slug,
+		page_limit,
+		start,
+	)
+	DebugAndStatus(fmt.Sprintf("Making HTTP request to /%s", endpoint))
+	data, err := BBSAPIRequest(endpoint, "GET")
+	if err != nil {
+		return pull_requests, err
+	}
+
+	// convert response
+	var response BitBucketPullRequestResponse
+	Debug(fmt.Sprintf("Attempting to unmarshal response %s", data))
+	err = json.Unmarshal([]byte(data), &response)
+	if err != nil {
+		return pull_requests, err
+	}
+
+	// if first iteration executing, set
+	// otherwise merge values
+	if len(pull_requests) == 0 {
+		pull_requests = response.Values
+	} else {
+		pull_requests = append(response.Values, pull_requests...)
+	}
+
+	// check for next page recursively
+	if !response.IsLastPage {
+		Debug("Not the last page. Recursively looking up next page.")
+		pull_requests, err = GetPullRequests(repository, pull_requests, response.NextPageStart)
+	}
+
+	return pull_requests, err
 }
 
 // pagination method for repos
