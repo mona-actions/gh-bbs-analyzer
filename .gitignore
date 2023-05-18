@@ -3,3 +3,5 @@
 /*.log
 .DS_Store
 thumbs.DB
+.env
+results.csv
