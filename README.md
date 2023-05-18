@@ -20,6 +20,15 @@ Future plans include:
 ## Prerequisites
 - [GitHub CLI](https://cli.github.com/manual/installation) installed.
 
+## Permissions Required
+In order for the analysis to work correctly, you will need to utilize a systems admin account so that all project and repository endpoints respond appropriately. If you don't, you will only receive limited information (the projects & repositories the user has access to).
+
+The endpoints currently called are:
+- `<server>/<api-url>/projects`
+- `<server>/<api-url>/projects/<project-key>/repos`
+- `<server>/projects/<project-key>/repos/<repo-slug>/sizes` (non-API endpoint hack)
+- `<server>/<api-url>/projects/<project-key>/repos/<repo-slug>/pull_requests`
+
 ## Install
 
 ```bash
