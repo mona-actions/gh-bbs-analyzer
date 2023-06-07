@@ -22,6 +22,7 @@ var (
 	bbs_server_url string
 	bbs_username   string
 	bbs_password   string
+	bbs_project    string
 	no_ssl_verify  = false
 	description    = "GitHub CLI extension to analyze BitBucket Server for migration statistics"
 	log_file       *os.File
@@ -129,6 +130,12 @@ func init() {
 		"p",
 		"",
 		"The Bitbucket password of the user specified by --bbs-username. If not set will be read from BBS_PASSWORD environment variable.",
+	)
+	rootCmd.PersistentFlags().StringVar(
+		&bbs_project,
+		"bbs-project",
+		"",
+		"A specific Bitbucket project instead of analyzing all proejcts.",
 	)
 	rootCmd.PersistentFlags().BoolVar(
 		&no_ssl_verify,
@@ -305,9 +312,23 @@ func Process(cmd *cobra.Command, args []string) (err error) {
 	sp.Start()
 
 	// Get all projects
-	projects, err := GetProjects([]BitBucketProject{}, 0)
-	if err != nil {
-		OutputError(fmt.Sprintf("Error looking up projects: %s", err), true)
+	var projects []BitBucketProject
+	if bbs_project == "" {
+		projects, err = GetProjects([]BitBucketProject{}, 0)
+		if err != nil {
+			OutputError(fmt.Sprintf("Error looking up projects: %s", err), true)
+		}
+	} else {
+		project, err := GetProject(bbs_project)
+		if err != nil {
+			OutputError(fmt.Sprintf("Error looking up project: %s", err), true)
+		}
+		projects = append(projects, project)
+	}
+
+	// make sure there are projects to lookup
+	if len(projects) == 0 {
+		OutputError("No projects were found to look up repositories for.", true)
 	}
 
 	// get all repos
@@ -372,7 +393,9 @@ func Process(cmd *cobra.Command, args []string) (err error) {
 	OutputNotice(fmt.Sprintf("Pull Requests: %d", total_pr))
 	OutputNotice(fmt.Sprintf("Comments: %d", total_comments))
 	OutputNotice(fmt.Sprintf("Total Disk Size: %s", display_size))
+	OutputNotice(fmt.Sprintf("Results File: ./%s", output_file))
 	LF()
+	Debug("---- WRITING TO CSV ----")
 
 	// Create output file
 	out_file, err := os.Create(output_file)
@@ -413,7 +436,27 @@ func Process(cmd *cobra.Command, args []string) (err error) {
 	return err
 }
 
-// pagination method for projects
+func GetProject(project_key string) (BitBucketProject, error) {
+
+	// get all projects
+	var project BitBucketProject
+	endpoint := fmt.Sprintf("/projects/%s", project_key)
+	DebugAndStatus(fmt.Sprintf("Making HTTP request to %s", endpoint))
+	data, err := BBSAPIRequest(endpoint, "GET")
+	if err != nil {
+		return project, err
+	} else if data == "" {
+		return project, fmt.Errorf("No data was returned from the project endpoint.")
+	}
+
+	// convert response
+	var response BitBucketProject
+	Debug(fmt.Sprintf("Attempting to unmarshal response data: %s", data))
+	err = json.Unmarshal([]byte(data), &response)
+
+	return response, err
+}
+
 func GetProjects(projects []BitBucketProject, start int) ([]BitBucketProject, error) {
 
 	// get all projects
@@ -449,7 +492,6 @@ func GetProjects(projects []BitBucketProject, start int) ([]BitBucketProject, er
 	return projects, err
 }
 
-// getting repo sizes
 func GetRepositorySize(repository BitBucketRepository) (size BitBucketRepositorySize, err error) {
 
 	// get repo size
@@ -510,7 +552,6 @@ func GetPullRequests(repository BitBucketRepository, pull_requests []BitBucketPu
 	return pull_requests, err
 }
 
-// pagination method for repos
 func GetRepositories(project string, repositories []BitBucketRepository, start int) ([]BitBucketRepository, error) {
 
 	// get all projects
