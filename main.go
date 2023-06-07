@@ -372,7 +372,9 @@ func Process(cmd *cobra.Command, args []string) (err error) {
 	OutputNotice(fmt.Sprintf("Pull Requests: %d", total_pr))
 	OutputNotice(fmt.Sprintf("Comments: %d", total_comments))
 	OutputNotice(fmt.Sprintf("Total Disk Size: %s", display_size))
+	OutputNotice(fmt.Sprintf("Results File: %s", output_file))
 	LF()
+	Debug("---- WRITING TO CSV ----")
 
 	// Create output file
 	out_file, err := os.Create(output_file)
@@ -413,7 +415,6 @@ func Process(cmd *cobra.Command, args []string) (err error) {
 	return err
 }
 
-// pagination method for projects
 func GetProjects(projects []BitBucketProject, start int) ([]BitBucketProject, error) {
 
 	// get all projects
@@ -449,7 +450,6 @@ func GetProjects(projects []BitBucketProject, start int) ([]BitBucketProject, er
 	return projects, err
 }
 
-// getting repo sizes
 func GetRepositorySize(repository BitBucketRepository) (size BitBucketRepositorySize, err error) {
 
 	// get repo size
@@ -510,7 +510,6 @@ func GetPullRequests(repository BitBucketRepository, pull_requests []BitBucketPu
 	return pull_requests, err
 }
 
-// pagination method for repos
 func GetRepositories(project string, repositories []BitBucketRepository, start int) ([]BitBucketRepository, error) {
 
 	// get all projects
