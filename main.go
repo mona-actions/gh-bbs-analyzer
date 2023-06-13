@@ -9,12 +9,14 @@ import (
 	"os"
 	"regexp"
 	"strconv"
+	"sync"
 	"time"
 	"unicode"
 
 	"github.com/briandowns/spinner"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
+	"golang.org/x/exp/slices"
 )
 
 var (
@@ -28,10 +30,18 @@ var (
 	log_file       *os.File
 	output_file    string
 	page_limit     = 100
+	repositories   []BitBucketRepository
+	threads        int
+	total_size     = 0
+	total_pr       = 0
+	total_comments = 0
+	waitGroup      sync.WaitGroup
+
 	// Create some colors and a spinner
-	red  = color.New(color.FgRed).SprintFunc()
-	cyan = color.New(color.FgCyan).SprintFunc()
-	sp   = spinner.New(spinner.CharSets[2], 100*time.Millisecond)
+	red    = color.New(color.FgRed).SprintFunc()
+	yellow = color.New(color.FgYellow).SprintFunc()
+	cyan   = color.New(color.FgCyan).SprintFunc()
+	sp     = spinner.New(spinner.CharSets[2], 100*time.Millisecond)
 	// Create the root cobra command
 	rootCmd = &cobra.Command{
 		Use:           "gh bbs-analyzer",
@@ -150,6 +160,13 @@ func init() {
 		"results.csv",
 		"The file to output the results to.",
 	)
+	rootCmd.PersistentFlags().IntVarP(
+		&threads,
+		"threads",
+		"t",
+		3,
+		"Number of threads to process concurrently.",
+	)
 
 	// add args here
 	rootCmd.Args = cobra.MaximumNArgs(0)
@@ -178,6 +195,10 @@ func OutputNotice(message string) {
 	Output(message, "default", false, false)
 }
 
+func OutputWarning(message string) {
+	Output(fmt.Sprint("[WARNING] ", message), "yellow", false, false)
+}
+
 func OutputError(message string, exit bool) {
 	sp.Stop()
 	Output(message, "red", true, exit)
@@ -193,6 +214,8 @@ func Output(message string, color string, isErr bool, exit bool) {
 	switch {
 	case color == "red":
 		message = red(message)
+	case color == "yellow":
+		message = yellow(message)
 	}
 	fmt.Println(message)
 	if exit {
@@ -281,7 +304,12 @@ func Process(cmd *cobra.Command, args []string) (err error) {
 		OutputError("A BitBucket server URL must be provided.", true)
 	}
 
-	// user environment variables if the flags aren't provided
+	if threads > 10 {
+		OutputError("Number of concurrent threads cannot be higher than 10.", true)
+	} else if threads > 3 {
+		OutputWarning("Number of concurrent threads is higher than 3. This could result in extreme load on your server.")
+	}
+
 	if bbs_username == "" {
 		bbs_username_env, is_set := os.LookupEnv("BBS_USERNAME")
 		if is_set {
@@ -306,6 +334,7 @@ func Process(cmd *cobra.Command, args []string) (err error) {
 	OutputFlags("BitBucket Username", bbs_username)
 	OutputFlags("BitBucket Password", "**********")
 	OutputFlags("SSL Verification Disabled", strconv.FormatBool(no_ssl_verify))
+	OutputFlags("Threads", fmt.Sprintf("%d", threads))
 	Debug("---- PROCESSING API REQUESTS ----")
 
 	// Start the spinner in the CLI
@@ -332,7 +361,6 @@ func Process(cmd *cobra.Command, args []string) (err error) {
 	}
 
 	// get all repos
-	var repositories []BitBucketRepository
 	for _, project := range projects {
 		repositories, err = GetRepositories(project.Key, repositories, 0)
 		if err != nil {
@@ -340,36 +368,63 @@ func Process(cmd *cobra.Command, args []string) (err error) {
 		}
 	}
 
-	// get repo info
-	total_size := 0
-	total_pr := 0
-	total_comments := 0
-	for i, repository := range repositories {
+	// set a temp var that we can batch through without effecting the original
+	repositoriesToProcess := repositories
+	batchThreads := threads
+	batchNum := 1
 
-		// get repo size
-		size, err := GetRepositorySize(repository)
-		if err != nil {
-			OutputError(fmt.Sprintf("Error looking up repository size: %s", err), true)
-		}
-		repositories[i].Size = size
-		total_size += size.Repository
+	// do while we still have repos left to process
+	for len(repositoriesToProcess) > 0 {
 
-		// get pull requests
-		var pull_requests []BitBucketPullRequest
-		pull_requests, err = GetPullRequests(repository, pull_requests, 0)
-		if err != nil {
-			OutputError(fmt.Sprintf("Error looking up repository pull requests: %s", err), true)
+		// adjust number of threads in case our batch has less than num of threads
+		repositoriesLeft := len(repositoriesToProcess)
+		if repositoriesLeft < threads {
+			batchThreads = repositoriesLeft
+			Debug(
+				fmt.Sprintf(
+					"Setting number of threads to %d because there are only %d repositories left.",
+					repositoriesLeft,
+					repositoriesLeft,
+				),
+			)
 		}
-		// get all pull request comments
-		repository_comment_count := 0
-		for _, pull_request := range pull_requests {
-			repository_comment_count += pull_request.Properties.CommentCount
+
+		DebugAndStatus(
+			fmt.Sprintf(
+				"Running repository analysis batch #%d (%d threads)...",
+				batchNum,
+				batchThreads,
+			),
+		)
+
+		// get the next batch into new array and remove from processing array
+		batch := repositoriesToProcess[:batchThreads]
+		repositoriesToProcess = repositoriesToProcess[len(batch):]
+
+		// add the number of wait groups needed
+		waitGroup.Add(len(batch))
+
+		// process threads
+		for i := 0; i < len(batch); i++ {
+			Debug(
+				fmt.Sprintf(
+					"Running thread %d of %d on repository '%s'",
+					i+1,
+					len(batch),
+					batch[i].Name,
+				),
+			)
+			go GetRepositoryStatistics(batch[i])
 		}
-		repositories[i].CommentCount = repository_comment_count
-		total_comments += repository_comment_count
-		repositories[i].PullRequests = pull_requests
-		total_pr += len(pull_requests)
+
+		// wait for threads to finish
+		waitGroup.Wait()
+		batchNum++
+
 	}
+
+	// Stop the spinner in the CLI
+	sp.Stop()
 
 	// do some quick math
 	display_size := fmt.Sprintf("%d B", total_size)
@@ -384,10 +439,9 @@ func Process(cmd *cobra.Command, args []string) (err error) {
 		display_size = fmt.Sprintf("%d KB", total_size/b)
 	}
 
-	// Stop the spinner in the CLI
-	sp.Stop()
-
 	LF()
+	Debug("---- OUTPUT INFO ----")
+	OutputFlags("Totals", "")
 	OutputNotice(fmt.Sprintf("Projects: %d", len(projects)))
 	OutputNotice(fmt.Sprintf("Repositories: %d", len(repositories)))
 	OutputNotice(fmt.Sprintf("Pull Requests: %d", total_pr))
@@ -434,6 +488,48 @@ func Process(cmd *cobra.Command, args []string) (err error) {
 
 	// always return
 	return err
+}
+
+func GetRepositoryStatistics(repository BitBucketRepository) {
+	// get repo size
+	size, err := GetRepositorySize(repository)
+	if err != nil {
+		OutputError(fmt.Sprintf("Error looking up repository size: %s", err), false)
+	}
+
+	// get pull requests
+	var pull_requests []BitBucketPullRequest
+	pull_requests, err = GetPullRequests(repository, pull_requests, 0)
+	if err != nil {
+		OutputError(fmt.Sprintf("Error looking up repository pull requests: %s", err), false)
+	}
+
+	// get all pull request comments
+	repository_comment_count := 0
+	for _, pull_request := range pull_requests {
+		repository_comment_count += pull_request.Properties.CommentCount
+	}
+
+	// add to repo information
+	repository.Size = size
+	repository.CommentCount = repository_comment_count
+	repository.PullRequests = pull_requests
+
+	// find index of repo in original list and overwite it
+	idx := slices.IndexFunc(repositories, func(r BitBucketRepository) bool { return r.ID == repository.ID })
+	if idx < 0 {
+		OutputError(fmt.Sprintf("Error finding batch repository in original list: %s", repository.Name), false)
+	} else {
+		repositories[idx] = repository
+	}
+
+	// add to totals for quick analysis
+	total_size += size.Repository
+	total_comments += repository_comment_count
+	total_pr += len(pull_requests)
+
+	// finish this group
+	waitGroup.Done()
 }
 
 func GetProject(project_key string) (BitBucketProject, error) {
@@ -496,14 +592,12 @@ func GetRepositorySize(repository BitBucketRepository) (size BitBucketRepository
 
 	// get repo size
 	endpoint := fmt.Sprintf("/projects/%s/repos/%s/sizes", repository.Project.Key, repository.Slug)
-	DebugAndStatus(fmt.Sprintf("Making HTTP request to: %s", endpoint))
 	data, err := BBSRequest(endpoint, "GET")
 	if err != nil {
 		return size, err
 	}
 
 	// convert response
-	Debug(fmt.Sprintf("Attempting to unmarshal response %s", data))
 	err = json.Unmarshal([]byte(data), &size)
 	if err != nil {
 		return size, err
@@ -521,7 +615,6 @@ func GetPullRequests(repository BitBucketRepository, pull_requests []BitBucketPu
 		page_limit,
 		start,
 	)
-	DebugAndStatus(fmt.Sprintf("Making HTTP request to /%s", endpoint))
 	data, err := BBSAPIRequest(endpoint, "GET")
 	if err != nil {
 		return pull_requests, err
@@ -529,7 +622,6 @@ func GetPullRequests(repository BitBucketRepository, pull_requests []BitBucketPu
 
 	// convert response
 	var response BitBucketPullRequestResponse
-	Debug(fmt.Sprintf("Attempting to unmarshal response %s", data))
 	err = json.Unmarshal([]byte(data), &response)
 	if err != nil {
 		return pull_requests, err
@@ -545,7 +637,6 @@ func GetPullRequests(repository BitBucketRepository, pull_requests []BitBucketPu
 
 	// check for next page recursively
 	if !response.IsLastPage {
-		Debug("Not the last page. Recursively looking up next page.")
 		pull_requests, err = GetPullRequests(repository, pull_requests, response.NextPageStart)
 	}
 
@@ -556,7 +647,6 @@ func GetRepositories(project string, repositories []BitBucketRepository, start i
 
 	// get all projects
 	endpoint := fmt.Sprintf("/projects/%s/repos?limit=%d&start=%d", project, page_limit, start)
-	DebugAndStatus(fmt.Sprintf("Making HTTP request to /%s", endpoint))
 	data, err := BBSAPIRequest(endpoint, "GET")
 	if err != nil {
 		return repositories, err
@@ -564,7 +654,6 @@ func GetRepositories(project string, repositories []BitBucketRepository, start i
 
 	// convert response
 	var response BitBucketRepositoryResponse
-	Debug(fmt.Sprintf("Attempting to unmarshal response %s", data))
 	err = json.Unmarshal([]byte(data), &response)
 	if err != nil {
 		return repositories, err
@@ -580,7 +669,6 @@ func GetRepositories(project string, repositories []BitBucketRepository, start i
 
 	// check for next page recursively
 	if !response.IsLastPage {
-		Debug("Not the last page. Recursively looking up next page.")
 		repositories, err = GetRepositories(project, repositories, response.NextPageStart)
 	}
 
@@ -599,7 +687,7 @@ func BBSHTTPRequest(path string, endpoint string, method string) (data string, e
 
 	// set up endpoint
 	url := fmt.Sprintf("%s%s%s", bbs_server_url, path, endpoint)
-	Debug(fmt.Sprintf("Request URL: %s", url))
+	Debug(fmt.Sprintf("Requesting URI: %s", url))
 
 	// set SSL verification
 	tr := &http.Transport{
