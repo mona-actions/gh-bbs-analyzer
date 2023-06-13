@@ -13,11 +13,13 @@ This is a work-in-progress. Currently the tool will report:
 - If repository is archived
 - If repository is public
 
-Tested on BitBucket Server 8.6.1
+Tested on BitBucket Server versions:
+- 8.6.1
 
 Future plans include:
 - Attachment counts
-- Multithreading
+- LFS detection
+- Large file scanning (above 100MB)
 
 ## Prerequisites
 - [GitHub CLI](https://cli.github.com/manual/installation) installed.
@@ -56,10 +58,12 @@ Usage:
 
 Flags:
   -p, --bbs-password string     The Bitbucket password of the user specified by --bbs-username. If not set will be read from BBS_PASSWORD environment variable.
+      --bbs-project string      A specific Bitbucket project instead of analyzing all proejcts.
   -s, --bbs-server-url string   The full URL of the Bitbucket Server/Data Center to migrate from. E.g. http://bitbucket.contoso.com:7990
   -u, --bbs-username string     The Bitbucket username of a user with site admin privileges. If not set will be read from BBS_USERNAME environment variable.
   -h, --help                    help for gh
       --no-ssl-verify           Disables SSL verification when communicating with your Bitbucket Server/Data Center instance. All other migration steps will continue to verify SSL. If your Bitbucket instance has a self-signed SSL certificate then setting this flag will allow the migration archive to be exported.
   -o, --output-file string      The file to output the results to. (default "results.csv")
+  -t, --threads int             Number of threads to process concurrently. (default 3)
   -v, --version                 version for gh
 ```
