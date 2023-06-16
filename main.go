@@ -33,6 +33,7 @@ var (
 	repositories   []BitBucketRepository
 	threads        int
 	total_size     = 0
+	total_branches = 0
 	total_pr       = 0
 	total_comments = 0
 	waitGroup      sync.WaitGroup
@@ -73,6 +74,19 @@ type BitBucketRepositoryResponse struct {
 	Filter        string                `json:"filter"`
 	NextPageStart int                   `json:"nextPageStart"`
 }
+type BitBucketBranchResponse struct {
+	Size          int               `json:"size"`
+	Limit         int               `json:"limit"`
+	IsLastPage    bool              `json:"isLastPage"`
+	Values        []BitBucketBranch `json:"values"`
+	Start         int               `json:"start"`
+	Filter        string            `json:"filter"`
+	NextPageStart int               `json:"nextPageStart"`
+}
+type BitBucketBranch struct {
+	ID        string `json:"id"`
+	DisplayID string `json:"displayId"`
+}
 type BitBucketPullRequestResponse struct {
 	Size          int                    `json:"size"`
 	Limit         int                    `json:"limit"`
@@ -109,6 +123,7 @@ type BitBucketRepository struct {
 	Archived      bool             `json:"archived"`
 	Project       BitBucketProject `json:"project"`
 	Size          BitBucketRepositorySize
+	Branches      []BitBucketBranch
 	PullRequests  []BitBucketPullRequest
 	CommentCount  int
 }
@@ -441,9 +456,11 @@ func Process(cmd *cobra.Command, args []string) (err error) {
 
 	LF()
 	Debug("---- OUTPUT INFO ----")
-	OutputFlags("Totals", "")
+	OutputNotice(cyan("-- SCAN COMPLETE --"))
+	LF()
 	OutputNotice(fmt.Sprintf("Projects: %d", len(projects)))
 	OutputNotice(fmt.Sprintf("Repositories: %d", len(repositories)))
+	OutputNotice(fmt.Sprintf("Branches: %d", total_branches))
 	OutputNotice(fmt.Sprintf("Pull Requests: %d", total_pr))
 	OutputNotice(fmt.Sprintf("Comments: %d", total_comments))
 	OutputNotice(fmt.Sprintf("Total Disk Size: %s", display_size))
@@ -497,6 +514,13 @@ func GetRepositoryStatistics(repository BitBucketRepository) {
 		OutputError(fmt.Sprintf("Error looking up repository size: %s", err), false)
 	}
 
+	// get branches
+	var branches []BitBucketBranch
+	branches, err = GetBranches(repository, branches, 0)
+	if err != nil {
+		OutputError(fmt.Sprintf("Error looking up repository branches: %s", err), false)
+	}
+
 	// get pull requests
 	var pull_requests []BitBucketPullRequest
 	pull_requests, err = GetPullRequests(repository, pull_requests, 0)
@@ -512,8 +536,9 @@ func GetRepositoryStatistics(repository BitBucketRepository) {
 
 	// add to repo information
 	repository.Size = size
-	repository.CommentCount = repository_comment_count
+	repository.Branches = branches
 	repository.PullRequests = pull_requests
+	repository.CommentCount = repository_comment_count
 
 	// find index of repo in original list and overwite it
 	idx := slices.IndexFunc(repositories, func(r BitBucketRepository) bool { return r.ID == repository.ID })
@@ -525,6 +550,7 @@ func GetRepositoryStatistics(repository BitBucketRepository) {
 
 	// add to totals for quick analysis
 	total_size += size.Repository
+	total_branches += len(branches)
 	total_comments += repository_comment_count
 	total_pr += len(pull_requests)
 
@@ -604,6 +630,43 @@ func GetRepositorySize(repository BitBucketRepository) (size BitBucketRepository
 	}
 
 	return size, err
+}
+
+func GetBranches(repository BitBucketRepository, branches []BitBucketBranch, start int) ([]BitBucketBranch, error) {
+	// get all branches
+	endpoint := fmt.Sprintf(
+		"/projects/%s/repos/%s/branches?limit=%d&start=%d",
+		repository.Project.Key,
+		repository.Slug,
+		page_limit,
+		start,
+	)
+	data, err := BBSAPIRequest(endpoint, "GET")
+	if err != nil {
+		return branches, err
+	}
+
+	// convert response
+	var response BitBucketBranchResponse
+	err = json.Unmarshal([]byte(data), &response)
+	if err != nil {
+		return branches, err
+	}
+
+	// if first iteration executing, set
+	// otherwise merge values
+	if len(branches) == 0 {
+		branches = response.Values
+	} else {
+		branches = append(response.Values, branches...)
+	}
+
+	// check for next page recursively
+	if !response.IsLastPage {
+		branches, err = GetBranches(repository, branches, response.NextPageStart)
+	}
+
+	return branches, err
 }
 
 func GetPullRequests(repository BitBucketRepository, pull_requests []BitBucketPullRequest, start int) ([]BitBucketPullRequest, error) {
