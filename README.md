@@ -1,8 +1,8 @@
 # gh-bbs-analyzer
 GitHub CLI extension for analyzing BitBucket Server to get migration statistics.
 
-[![build](https://github.com/mona-actions/gh-migrate-webhook-secrets/actions/workflows/build.yaml/badge.svg)](https://github.com/mona-actions/gh-migrate-webhook-secrets/actions/workflows/build.yaml)
-[![release](https://github.com/mona-actions/gh-migrate-webhook-secrets/actions/workflows/release.yaml/badge.svg)](https://github.com/mona-actions/gh-migrate-webhook-secrets/actions/workflows/release.yaml)
+[![build](https://github.com/mona-actions/gh-bbs-analyzer/actions/workflows/build.yaml/badge.svg)](https://github.com/mona-actions/gh-bbs-analyzer/actions/workflows/build.yaml)
+[![release](https://github.com/mona-actions/gh-bbs-analyzer/actions/workflows/release.yaml/badge.svg)](https://github.com/mona-actions/gh-bbs-analyzer/actions/workflows/release.yaml)
 
 ## Under Construction
 This is a work-in-progress. Currently the tool will report:
