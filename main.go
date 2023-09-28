@@ -721,6 +721,9 @@ func BBSHTTPRequest(path string, endpoint string, method string) (data string, e
 		return "", err
 	}
 
+	// log response to debug
+	Debug(fmt.Sprintf("Response: %s", string(bodyBytes)))
+
 	// return the response and nil error
 	return string(bodyBytes), err
 }
