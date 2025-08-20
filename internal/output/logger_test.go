@@ -47,14 +47,24 @@ func TestLogger_Error(t *testing.T) {
 	logger.Error(testMessage)
 }
 
-func TestLogger_Flag(t *testing.T) {
+func TestLogger_LogConfiguration(t *testing.T) {
 	logger := output.NewLogger()
 	defer logger.Close()
 
-	// Test that Flag method doesn't panic
+	// Test that LogConfiguration method doesn't panic
 	key := "Test Key"
 	value := "Test Value"
-	logger.Flag(key, value)
+	logger.LogConfiguration(key, value)
+}
+
+func TestLogger_LogStatistic(t *testing.T) {
+	logger := output.NewLogger()
+	defer logger.Close()
+
+	// Test that LogStatistic method doesn't panic
+	key := "Test Stat"
+	value := "Test Value"
+	logger.LogStatistic(key, value)
 }
 
 func TestLogger_Debug(t *testing.T) {

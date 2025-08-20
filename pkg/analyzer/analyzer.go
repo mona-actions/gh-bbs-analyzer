@@ -4,9 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
-	"time"
 
-	"github.com/briandowns/spinner"
 	"github.com/mona-actions/gh-bbs-analyzer/internal/bitbucket"
 	"github.com/mona-actions/gh-bbs-analyzer/internal/config"
 	"github.com/mona-actions/gh-bbs-analyzer/internal/output"
@@ -32,21 +30,17 @@ type Statistics struct {
 // Analyzer handles the analysis of BitBucket repositories using dependency injection
 // This version is testable as it doesn't create its own dependencies
 type Analyzer struct {
-	client  BitBucketClient
-	logger  *output.Logger
-	config  *config.Config
-	spinner *spinner.Spinner
+	client BitBucketClient
+	logger *output.Logger
+	config *config.Config
 }
 
 // NewAnalyzer creates a new analyzer with dependency injection
 func NewAnalyzer(client BitBucketClient, logger *output.Logger, cfg *config.Config) *Analyzer {
-	sp := spinner.New(spinner.CharSets[2], 100*time.Millisecond)
-
 	return &Analyzer{
-		client:  client,
-		logger:  logger,
-		config:  cfg,
-		spinner: sp,
+		client: client,
+		logger: logger,
+		config: cfg,
 	}
 }
 
@@ -65,9 +59,7 @@ func NewAnalyzerFromConfig(cfg *config.Config, logger *output.Logger) *Analyzer 
 
 // Run performs the complete analysis using the injected client
 func (a *Analyzer) Run(ctx context.Context) (*Results, error) {
-	a.logger.Debug("---- STARTING ANALYSIS ----")
-	a.spinner.Start()
-	defer a.spinner.Stop()
+	a.logger.Info("Starting repository analysis")
 
 	// Get projects
 	projects, err := a.getProjects()
@@ -166,7 +158,7 @@ func (a *Analyzer) analyzeRepositories(ctx context.Context, repos []bitbucket.Re
 			results[idx] = analyzedRepo
 			mu.Unlock()
 
-			a.logger.Debug(fmt.Sprintf("Completed analysis of repository: %s", repository.Name))
+			a.logger.Info(fmt.Sprintf("Completed analysis of repository: %s", repository.Name))
 		}(i, repo)
 	}
 

@@ -106,16 +106,21 @@ func TestRootCommandVersion(t *testing.T) {
 	}
 }
 
-func TestRootCommandFailsWithoutRequiredFlags(t *testing.T) {
+func TestRootCommandShowsHelpWithoutRequiredFlags(t *testing.T) {
 	rootCmd := cmd.NewRootCommand()
 
 	var buf bytes.Buffer
-	rootCmd.SetErr(&buf)
+	rootCmd.SetOut(&buf)
 	rootCmd.SetArgs([]string{}) // No arguments
 
 	err := rootCmd.Execute()
-	if err == nil {
-		t.Error("Expected error when running without required flags")
+	if err != nil {
+		t.Errorf("Expected no error when showing help, got %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "GitHub CLI extension to analyze BitBucket Server") {
+		t.Error("Expected help output to be displayed when no flags provided")
 	}
 }
 

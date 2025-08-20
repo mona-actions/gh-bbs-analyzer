@@ -32,6 +32,10 @@ func NewRootCommand() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Check if no flags were provided and show help
+			if !cmd.Flags().HasFlags() || !hasRequiredFlags(cmd) {
+				return cmd.Help()
+			}
 			return runAnalysis(&cfg)
 		},
 	}
@@ -43,6 +47,12 @@ func NewRootCommand() *cobra.Command {
 	bindFlags(rootCmd)
 
 	return rootCmd
+}
+
+// hasRequiredFlags checks if the required flags have been set
+func hasRequiredFlags(cmd *cobra.Command) bool {
+	serverURL, _ := cmd.Flags().GetString("bbs-server-url")
+	return serverURL != ""
 }
 
 // addFlags adds all command-line flags
@@ -70,9 +80,6 @@ func addFlags(cmd *cobra.Command, cfg *config.Config) {
 	// Performance configuration
 	flags.IntVarP(&cfg.Threads, "threads", "t", 3,
 		"Number of threads to process concurrently.")
-
-	// Mark required flags
-	cmd.MarkPersistentFlagRequired("bbs-server-url")
 }
 
 // bindFlags binds flags to viper for configuration management
@@ -108,6 +115,8 @@ func runAnalysis(cfg *config.Config) error {
 	if cfg.Threads > 3 {
 		logger.Warning("Number of concurrent threads is higher than 3. This could result in extreme load on your server.")
 	}
+
+	logger.Info("Starting BitBucket Server analysis")
 
 	// Set up context with cancellation
 	ctx, cancel := context.WithCancel(context.Background())
@@ -147,26 +156,22 @@ func runAnalysis(cfg *config.Config) error {
 
 // displayConfiguration shows the current configuration
 func displayConfiguration(cfg *config.Config, logger *output.Logger) {
-	logger.Info("---- CONFIGURATION ----")
-	logger.Flag("BitBucket Server URL", cfg.BitBucket.ServerURL)
-	logger.Flag("BitBucket Username", cfg.BitBucket.Username)
-	logger.Flag("BitBucket Password", "**********")
+	logger.LogConfiguration("BitBucket Server URL", cfg.BitBucket.ServerURL)
+	logger.LogConfiguration("BitBucket Username", cfg.BitBucket.Username)
+	logger.LogConfiguration("BitBucket Password", "**********")
 	if cfg.BitBucket.Project != "" {
-		logger.Flag("BitBucket Project", cfg.BitBucket.Project)
+		logger.LogConfiguration("BitBucket Project", cfg.BitBucket.Project)
 	}
-	logger.Flag("SSL Verification Disabled", fmt.Sprintf("%t", cfg.NoSSLVerify))
-	logger.Flag("Threads", fmt.Sprintf("%d", cfg.Threads))
-	logger.Flag("Output File", cfg.Output.File)
-	logger.Info("")
+	logger.LogConfiguration("SSL Verification Disabled", fmt.Sprintf("%t", cfg.NoSSLVerify))
+	logger.LogConfiguration("Threads", fmt.Sprintf("%d", cfg.Threads))
+	logger.LogConfiguration("Output File", cfg.Output.File)
 }
 
 // displayResults shows the analysis results
 func displayResults(results *analyzer.Results, logger *output.Logger) {
-	logger.Info("---- ANALYSIS RESULTS ----")
-	logger.Flag("Projects", fmt.Sprintf("%d", results.Statistics.TotalProjects))
-	logger.Flag("Repositories", fmt.Sprintf("%d", results.Statistics.TotalRepos))
-	logger.Flag("Pull Requests", fmt.Sprintf("%d", results.Statistics.TotalPRs))
-	logger.Flag("Comments", fmt.Sprintf("%d", results.Statistics.TotalComments))
-	logger.Flag("Total Disk Size", results.Statistics.FormattedSize)
-	logger.Info("")
+	logger.LogStatistic("Projects", fmt.Sprintf("%d", results.Statistics.TotalProjects))
+	logger.LogStatistic("Repositories", fmt.Sprintf("%d", results.Statistics.TotalRepos))
+	logger.LogStatistic("Pull Requests", fmt.Sprintf("%d", results.Statistics.TotalPRs))
+	logger.LogStatistic("Comments", fmt.Sprintf("%d", results.Statistics.TotalComments))
+	logger.LogStatistic("Total Disk Size", results.Statistics.FormattedSize)
 }
