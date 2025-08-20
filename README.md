@@ -1,8 +1,4 @@
-# gh-bbs-analyzer
-
-[![build](https://github.com/mona-actions/gh-bbs-analyzer/actions/workflows/build.yaml/badge.svg)](https://github.com/mona-actions/gh-bbs-analyzer/actions/workflows/build.yaml)
-[![release](https://github.com/mona-actions/gh-bbs-analyzer/actions/workflows/release.yaml/badge.svg)](https://github.com/mona-actions/gh-bbs-analyzer/actions/workflows/release.yaml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/mona-actions/gh-bbs-analyzer)](https://goreportcard.com/report/github.com/mona-actions/gh-bbs-analyzer)
+# GitHub Bitbucket Server Analyzer
 
 A GitHub CLI extension for analyzing BitBucket Server instances to gather migration statistics and insights.
 
