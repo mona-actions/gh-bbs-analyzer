@@ -169,9 +169,30 @@ func displayConfiguration(cfg *config.Config, logger *output.Logger) {
 
 // displayResults shows the analysis results
 func displayResults(results *analyzer.Results, logger *output.Logger) {
+	// Core repository metrics
 	logger.LogStatistic("Projects", fmt.Sprintf("%d", results.Statistics.TotalProjects))
 	logger.LogStatistic("Repositories", fmt.Sprintf("%d", results.Statistics.TotalRepos))
+	logger.LogStatistic("Active Repositories", fmt.Sprintf("%d", results.Statistics.ActiveRepos))
+	logger.LogStatistic("Archived Repositories", fmt.Sprintf("%d", results.Statistics.ArchivedRepos))
+
+	// Code structure metrics
+	logger.LogStatistic("Branches", fmt.Sprintf("%d", results.Statistics.TotalBranches))
+	logger.LogStatistic("Tags", fmt.Sprintf("%d", results.Statistics.TotalTags))
+	logger.LogStatistic("Forks", fmt.Sprintf("%d", results.Statistics.TotalForks))
+
+	// Content metrics
 	logger.LogStatistic("Pull Requests", fmt.Sprintf("%d", results.Statistics.TotalPRs))
 	logger.LogStatistic("Comments", fmt.Sprintf("%d", results.Statistics.TotalComments))
 	logger.LogStatistic("Total Disk Size", results.Statistics.FormattedSize)
+
+	// Git LFS metrics
+	if results.Statistics.TotalLFSFiles > 0 {
+		logger.LogStatistic("Git LFS Files", fmt.Sprintf("%d", results.Statistics.TotalLFSFiles))
+		logger.LogStatistic("Git LFS Size", results.Statistics.FormattedLFSSize)
+	}
+
+	// Integration metrics
+	logger.LogStatistic("Webhooks", fmt.Sprintf("%d", results.Statistics.TotalWebhooks))
+	logger.LogStatistic("Repository Hooks", fmt.Sprintf("%d", results.Statistics.TotalHooks))
+	logger.LogStatistic("User Permissions", fmt.Sprintf("%d", results.Statistics.TotalPermissions))
 }

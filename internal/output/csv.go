@@ -26,8 +26,10 @@ func (w *CSVWriter) WriteRepositories(repositories []bitbucket.Repository) error
 	}
 	defer file.Close()
 
-	// Write header
-	header := "project,repository,size,pull_requests,comments,archived,public\n"
+	// Write header with expanded fields for migration analysis
+	header := "project,repository,size,pull_requests,comments,archived,public," +
+		"branches,default_branch,tags,forks,webhooks,lfs_files,lfs_size," +
+		"permissions,hooks,commits,contributors,last_activity_date\n"
 	if _, err := file.WriteString(header); err != nil {
 		return fmt.Errorf("failed to write header: %w", err)
 	}
@@ -39,7 +41,18 @@ func (w *CSVWriter) WriteRepositories(repositories []bitbucket.Repository) error
 			size = repo.Size.Repository
 		}
 
-		line := fmt.Sprintf("%s,%s,%d,%d,%d,%s,%s\n",
+		// Handle potential empty values
+		defaultBranch := repo.DefaultBranch
+		if defaultBranch == "" {
+			defaultBranch = "unknown"
+		}
+
+		lastActivity := repo.LastActivity
+		if lastActivity == "" {
+			lastActivity = "no-recent-activity"
+		}
+
+		line := fmt.Sprintf("%s,%s,%d,%d,%d,%s,%s,%d,%s,%d,%d,%d,%d,%d,%d,%d,%d,%d,%s\n",
 			repo.Project.Key,
 			repo.Slug,
 			size,
@@ -47,6 +60,18 @@ func (w *CSVWriter) WriteRepositories(repositories []bitbucket.Repository) error
 			repo.CommentCount,
 			strconv.FormatBool(repo.Archived),
 			strconv.FormatBool(repo.Public),
+			repo.BranchCount,
+			defaultBranch,
+			repo.TagCount,
+			repo.ForkCount,
+			repo.WebhookCount,
+			repo.LFSFileCount,
+			repo.LFSSize,
+			len(repo.UserPermissions),
+			len(repo.Hooks),
+			repo.CommitCount,
+			repo.ContributorCount,
+			lastActivity,
 		)
 
 		if _, err := file.WriteString(line); err != nil {

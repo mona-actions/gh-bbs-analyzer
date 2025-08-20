@@ -77,6 +77,64 @@ func (m *MockBitBucketClient) GetPullRequests(projectKey, repoSlug string) ([]bi
 	return m.pullRequests[key], nil
 }
 
+// New methods for enhanced migration analysis - return empty data for tests
+func (m *MockBitBucketClient) GetBranches(projectKey, repoSlug string) ([]bitbucket.Branch, error) {
+	return []bitbucket.Branch{
+		{ID: "refs/heads/main", DisplayID: "main", IsDefault: true},
+		{ID: "refs/heads/develop", DisplayID: "develop", IsDefault: false},
+	}, nil
+}
+
+func (m *MockBitBucketClient) GetTags(projectKey, repoSlug string) ([]bitbucket.Tag, error) {
+	return []bitbucket.Tag{
+		{ID: "refs/tags/v1.0.0", DisplayID: "v1.0.0"},
+	}, nil
+}
+
+func (m *MockBitBucketClient) GetUserPermissions(projectKey, repoSlug string) ([]bitbucket.UserPermission, error) {
+	return []bitbucket.UserPermission{
+		{
+			User: bitbucket.User{
+				Name:        "testuser",
+				DisplayName: "Test User",
+				Active:      true,
+			},
+			Permission: "REPO_ADMIN",
+		},
+	}, nil
+}
+
+func (m *MockBitBucketClient) GetHooks(projectKey, repoSlug string) ([]bitbucket.Hook, error) {
+	return []bitbucket.Hook{}, nil
+}
+
+func (m *MockBitBucketClient) GetWebhooks(projectKey, repoSlug string) ([]bitbucket.Webhook, error) {
+	return []bitbucket.Webhook{}, nil
+}
+
+func (m *MockBitBucketClient) GetLFSFiles(projectKey, repoSlug string) ([]bitbucket.LFSFile, error) {
+	return []bitbucket.LFSFile{}, nil
+}
+
+func (m *MockBitBucketClient) GetCommits(projectKey, repoSlug string, limit int) ([]bitbucket.Commit, error) {
+	return []bitbucket.Commit{
+		{
+			ID:         "abc123",
+			DisplayID:  "abc123",
+			AuthorDate: 1693497600000, // August 31, 2023 in milliseconds
+			Author: bitbucket.CommitUser{
+				Name:         "testuser",
+				EmailAddress: "test@example.com",
+			},
+			Message: "Test commit",
+		},
+	}, nil
+}
+
+func (m *MockBitBucketClient) GetForks(projectKey, repoSlug string) ([]bitbucket.Fork, error) {
+	return []bitbucket.Fork{}, nil
+}
+
 // Test helper to create a test logger
 func createTestLogger(t *testing.T) *output.Logger {
 	return output.NewLogger()
@@ -234,6 +292,23 @@ func TestAnalyzer_RunWithSingleProject(t *testing.T) {
 		t.Errorf("Expected total size %d, got %d", expectedSize, results.Statistics.TotalSize)
 	}
 
+	// Verify new migration-relevant statistics
+	if results.Statistics.TotalBranches != 4 { // 2 branches per repo * 2 repos
+		t.Errorf("Expected 4 total branches, got %d", results.Statistics.TotalBranches)
+	}
+
+	if results.Statistics.TotalTags != 2 { // 1 tag per repo * 2 repos
+		t.Errorf("Expected 2 total tags, got %d", results.Statistics.TotalTags)
+	}
+
+	if results.Statistics.TotalPermissions != 2 { // 1 permission per repo * 2 repos
+		t.Errorf("Expected 2 total permissions, got %d", results.Statistics.TotalPermissions)
+	}
+
+	if results.Statistics.ActiveRepos != 2 { // Both repos have commits
+		t.Errorf("Expected 2 active repos, got %d", results.Statistics.ActiveRepos)
+	}
+
 	// Verify repository details
 	for _, repo := range results.Repositories {
 		if repo.Size == nil {
@@ -246,6 +321,27 @@ func TestAnalyzer_RunWithSingleProject(t *testing.T) {
 
 		if repo.CommentCount == 0 && repo.Slug == "repo1" {
 			t.Errorf("Expected repository %s to have comments", repo.Name)
+		}
+
+		// Verify new migration-relevant fields
+		if repo.BranchCount == 0 {
+			t.Errorf("Expected repository %s to have branch count", repo.Name)
+		}
+
+		if repo.DefaultBranch == "" {
+			t.Errorf("Expected repository %s to have default branch", repo.Name)
+		}
+
+		if repo.TagCount == 0 {
+			t.Errorf("Expected repository %s to have tag count", repo.Name)
+		}
+
+		if repo.CommitCount == 0 {
+			t.Errorf("Expected repository %s to have commit count", repo.Name)
+		}
+
+		if repo.ContributorCount == 0 {
+			t.Errorf("Expected repository %s to have contributor count", repo.Name)
 		}
 	}
 }

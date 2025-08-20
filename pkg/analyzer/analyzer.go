@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/mona-actions/gh-bbs-analyzer/internal/bitbucket"
 	"github.com/mona-actions/gh-bbs-analyzer/internal/config"
@@ -25,6 +26,18 @@ type Statistics struct {
 	TotalComments int
 	TotalSize     int64
 	FormattedSize string
+	// New migration-relevant metrics
+	TotalBranches    int
+	TotalTags        int
+	TotalForks       int
+	TotalWebhooks    int
+	TotalLFSFiles    int
+	TotalLFSSize     int64
+	FormattedLFSSize string
+	TotalPermissions int
+	TotalHooks       int
+	ActiveRepos      int // Repos with commits in last 90 days
+	ArchivedRepos    int // Archived repositories
 }
 
 // Analyzer handles the analysis of BitBucket repositories using dependency injection
@@ -201,34 +214,168 @@ func (a *Analyzer) analyzeRepository(repo bitbucket.Repository) (bitbucket.Repos
 	}
 	repo.CommentCount = commentCount
 
+	// Get branches
+	branches, err := a.client.GetBranches(repo.Project.Key, repo.Slug)
+	if err != nil {
+		a.logger.Warning(fmt.Sprintf("Failed to get branches for repository %s: %v", repo.Name, err))
+	} else {
+		repo.BranchCount = len(branches)
+		// Find default branch
+		for _, branch := range branches {
+			if branch.IsDefault {
+				repo.DefaultBranch = branch.DisplayID
+				break
+			}
+		}
+	}
+
+	// Get tags
+	tags, err := a.client.GetTags(repo.Project.Key, repo.Slug)
+	if err != nil {
+		a.logger.Warning(fmt.Sprintf("Failed to get tags for repository %s: %v", repo.Name, err))
+	} else {
+		repo.TagCount = len(tags)
+	}
+
+	// Get user permissions
+	permissions, err := a.client.GetUserPermissions(repo.Project.Key, repo.Slug)
+	if err != nil {
+		a.logger.Warning(fmt.Sprintf("Failed to get permissions for repository %s: %v", repo.Name, err))
+	} else {
+		repo.UserPermissions = permissions
+	}
+
+	// Get hooks
+	hooks, err := a.client.GetHooks(repo.Project.Key, repo.Slug)
+	if err != nil {
+		a.logger.Warning(fmt.Sprintf("Failed to get hooks for repository %s: %v", repo.Name, err))
+	} else {
+		repo.Hooks = hooks
+	}
+
+	// Get webhooks
+	webhooks, err := a.client.GetWebhooks(repo.Project.Key, repo.Slug)
+	if err != nil {
+		a.logger.Warning(fmt.Sprintf("Failed to get webhooks for repository %s: %v", repo.Name, err))
+	} else {
+		repo.WebhookCount = len(webhooks)
+	}
+
+	// Get LFS files
+	lfsFiles, err := a.client.GetLFSFiles(repo.Project.Key, repo.Slug)
+	if err != nil {
+		a.logger.Warning(fmt.Sprintf("Failed to get LFS files for repository %s: %v", repo.Name, err))
+	} else {
+		repo.LFSFileCount = len(lfsFiles)
+		var lfsSize int64
+		for _, file := range lfsFiles {
+			lfsSize += file.Size
+		}
+		repo.LFSSize = lfsSize
+	}
+
+	// Get recent commits to determine activity
+	commits, err := a.client.GetCommits(repo.Project.Key, repo.Slug, 10)
+	if err != nil {
+		a.logger.Warning(fmt.Sprintf("Failed to get commits for repository %s: %v", repo.Name, err))
+	} else {
+		repo.CommitCount = len(commits)
+		// Extract unique contributors
+		contributors := make(map[string]bool)
+		for _, commit := range commits {
+			contributors[commit.Author.EmailAddress] = true
+		}
+		repo.ContributorCount = len(contributors)
+
+		// Set last activity if we have commits
+		if len(commits) > 0 {
+			// Use the author timestamp of the most recent commit
+			if commits[0].AuthorDate > 0 {
+				lastActivityTime := time.Unix(commits[0].AuthorDate/1000, 0) // BitBucket uses milliseconds
+				repo.LastActivity = lastActivityTime.Format("2006-01-02")
+			} else {
+				repo.LastActivity = "unknown"
+			}
+		}
+	}
+
+	// Get forks
+	forks, err := a.client.GetForks(repo.Project.Key, repo.Slug)
+	if err != nil {
+		a.logger.Warning(fmt.Sprintf("Failed to get forks for repository %s: %v", repo.Name, err))
+	} else {
+		repo.ForkCount = len(forks)
+	}
+
 	return repo, nil
 }
 
 // calculateStatistics calculates summary statistics
 func (a *Analyzer) calculateStatistics(projects []bitbucket.Project, repos []bitbucket.Repository) Statistics {
 	var (
-		totalPRs      int
-		totalComments int
-		totalSize     int64
+		totalPRs         int
+		totalComments    int
+		totalSize        int64
+		totalBranches    int
+		totalTags        int
+		totalForks       int
+		totalWebhooks    int
+		totalLFSFiles    int
+		totalLFSSize     int64
+		totalPermissions int
+		totalHooks       int
+		activeRepos      int
+		archivedRepos    int
 	)
 
 	for _, repo := range repos {
 		totalPRs += len(repo.PullRequests)
 		totalComments += repo.CommentCount
+		totalBranches += repo.BranchCount
+		totalTags += repo.TagCount
+		totalForks += repo.ForkCount
+		totalWebhooks += repo.WebhookCount
+		totalLFSFiles += repo.LFSFileCount
+		totalLFSSize += repo.LFSSize
+		totalPermissions += len(repo.UserPermissions)
+		totalHooks += len(repo.Hooks)
+
 		if repo.Size != nil {
 			totalSize += int64(repo.Size.Repository)
+		}
+
+		// Count archived repositories
+		if repo.Archived {
+			archivedRepos++
+		}
+
+		// Count active repositories (those with recent commits)
+		if repo.CommitCount > 0 {
+			activeRepos++
 		}
 	}
 
 	formattedSize := FormatSize(totalSize)
+	formattedLFSSize := FormatSize(totalLFSSize)
 
 	return Statistics{
-		TotalProjects: len(projects),
-		TotalRepos:    len(repos),
-		TotalPRs:      totalPRs,
-		TotalComments: totalComments,
-		TotalSize:     totalSize,
-		FormattedSize: formattedSize,
+		TotalProjects:    len(projects),
+		TotalRepos:       len(repos),
+		TotalPRs:         totalPRs,
+		TotalComments:    totalComments,
+		TotalSize:        totalSize,
+		FormattedSize:    formattedSize,
+		TotalBranches:    totalBranches,
+		TotalTags:        totalTags,
+		TotalForks:       totalForks,
+		TotalWebhooks:    totalWebhooks,
+		TotalLFSFiles:    totalLFSFiles,
+		TotalLFSSize:     totalLFSSize,
+		FormattedLFSSize: formattedLFSSize,
+		TotalPermissions: totalPermissions,
+		TotalHooks:       totalHooks,
+		ActiveRepos:      activeRepos,
+		ArchivedRepos:    archivedRepos,
 	}
 }
 

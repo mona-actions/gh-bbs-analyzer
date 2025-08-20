@@ -17,12 +17,33 @@ A GitHub CLI extension for analyzing BitBucket Server instances to gather migrat
 
 ## 📊 Analyzed Metrics
 
+### Core Repository Data
+
 - Repository disk sizes (with human-readable formatting)
 - Pull request counts per repository
 - Comment counts across all pull requests
 - Repository archival status
 - Repository visibility (public/private)
 - Project and repository counts
+
+### Migration-Critical Analysis
+
+- **Branch Analysis**: Branch counts, default branch identification
+- **Tag Analysis**: Git tag counts for release tracking
+- **Fork Analysis**: Repository fork relationships and counts
+- **User Permissions**: User access patterns and permission levels
+- **Integration Analysis**: Webhook and repository hook configurations
+- **Git LFS Detection**: Large File Storage usage and sizes
+- **Activity Metrics**: Repository activity levels and contributor counts
+- **Legacy Features**: BitBucket-specific features requiring migration planning
+
+### Migration Planning Insights
+
+- Active vs. dormant repository identification
+- Permission complexity assessment
+- Integration migration requirements
+- Large file handling considerations
+- Repository prioritization data
 
 ## 🧪 Tested Versions
 
@@ -148,7 +169,9 @@ gh bbs-analyzer -s https://bitbucket.company.com:7990 \
 
 ### CSV Export
 
-The tool generates a CSV file with the following columns:
+The tool generates a comprehensive CSV file with the following columns for migration analysis:
+
+#### Core Repository Data
 
 - `project`: Project key
 - `repository`: Repository name
@@ -157,6 +180,21 @@ The tool generates a CSV file with the following columns:
 - `comments`: Total comment count
 - `archived`: Whether repository is archived (true/false)
 - `public`: Whether repository is public (true/false)
+
+#### Migration-Critical Analysis
+
+- `branches`: Number of branches
+- `default_branch`: Default branch name
+- `tags`: Number of tags
+- `forks`: Number of forks
+- `webhooks`: Number of configured webhooks
+- `lfs_files`: Number of Git LFS files
+- `lfs_size`: Total Git LFS size in bytes
+- `permissions`: Number of user permissions
+- `hooks`: Number of repository hooks
+- `commits`: Recent commit count (activity indicator)
+- `contributors`: Number of unique contributors
+- `last_activity_date`: Date of most recent commit (YYYY-MM-DD format)
 
 ## 🛠️ Development
 
